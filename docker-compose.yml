@@ -16,14 +16,37 @@ services:
     env_file: .env
     environment:
       VB_BACKEND_CONTAINER: vibebench-backend
+      VB_EGRESS_CONTAINER: vibebench-egress
       VB_GATEWAY_SECRET: ${VB_GATEWAY_SECRET:?Set VB_GATEWAY_SECRET in .env}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     networks: [platform]
     restart: unless-stopped
     mem_limit: 1g
+    depends_on:
+      egress:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health/ready', timeout=3)"]
+      interval: 10s
+      timeout: 4s
+      retries: 5
+
+  egress:
+    container_name: vibebench-egress
+    build:
+      context: .
+      dockerfile: infrastructure/docker/egress.Dockerfile
+    environment:
+      VB_EXTRA_EGRESS_HOSTS: ${VB_EXTRA_EGRESS_HOSTS:-}
+    networks: [egress]
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 96m
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('127.0.0.1', 3128), 2).close()"]
       interval: 10s
       timeout: 4s
       retries: 5
@@ -55,6 +78,19 @@ services:
         condition: service_started
     restart: unless-stopped
 
+  cloudflared:
+    image: cloudflare/cloudflared:2026.11.2
+    profiles: [tunnel]
+    command: tunnel --config /etc/cloudflared/config.yml --no-autoupdate run
+    volumes:
+      - ./infrastructure/cloudflare/config.yml:/etc/cloudflared/config.yml:ro
+      - ./infrastructure/cloudflare/credentials.json:/etc/cloudflared/credentials.json:ro
+    networks: [platform]
+    depends_on: [caddy]
+    restart: unless-stopped
+
 networks:
   platform:
+    driver: bridge
+  egress:
     driver: bridge

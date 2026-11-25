@@ -24,6 +24,8 @@ class Sandbox:
 
 class SandboxProvider(Protocol):
     async def create(self, name: str, configuration: dict[str, str]) -> Sandbox: ...
+    async def inspect(self, sandbox: Sandbox) -> str: ...
+    async def stop(self, sandbox: Sandbox) -> None: ...
     async def destroy(self, sandbox: Sandbox) -> None: ...
 
 
@@ -38,18 +40,29 @@ class DockerSandboxProvider:
 
     def _create(self, name: str, configuration: dict[str, str]) -> Sandbox:
         settings = self.settings
-        network = self.client.networks.create(name, driver="bridge", labels=self.labels)
+        network = self.client.networks.create(
+            name,
+            driver="bridge",
+            internal=True,
+            enable_ipv6=False,
+            labels=self.labels,
+        )
         container = None
         try:
-            backend = self.client.containers.get(settings.backend_container)
-            network.connect(backend)
-            backend.reload()
-            backend_address = str(
-                ipaddress.IPv4Address(
-                    backend.attrs["NetworkSettings"]["Networks"][network.name]["IPAddress"]
-                )
-            )
-            environment = {**configuration, "HOME": "/tmp/vb-home"}
+            backend_address = self._connect(network, settings.backend_container)
+            proxy_address = self._connect(network, settings.egress_container)
+            proxy = f"http://{proxy_address}:3128"
+            no_proxy = f"localhost,127.0.0.1,{backend_address}"
+            environment = {
+                **configuration,
+                "HOME": "/tmp/vb-home",
+                "HTTPS_PROXY": proxy,
+                "https_proxy": proxy,
+                "HTTP_PROXY": proxy,
+                "http_proxy": proxy,
+                "NO_PROXY": no_proxy,
+                "no_proxy": no_proxy,
+            }
             config = environment.get("OPENCODE_CONFIG_CONTENT")
             if config:
                 environment["OPENCODE_CONFIG_CONTENT"] = config.replace(
@@ -94,6 +107,14 @@ class DockerSandboxProvider:
     async def destroy(self, sandbox: Sandbox) -> None:
         await asyncio.to_thread(self._destroy, sandbox)
 
+    async def inspect(self, sandbox: Sandbox) -> str:
+        container = await asyncio.to_thread(self.client.containers.get, sandbox.container_id)
+        return container.status
+
+    async def stop(self, sandbox: Sandbox) -> None:
+        container = await asyncio.to_thread(self.client.containers.get, sandbox.container_id)
+        await asyncio.to_thread(container.stop, timeout=5)
+
     def _destroy(self, sandbox: Sandbox) -> None:
         try:
             self.client.containers.get(sandbox.container_id).remove(force=True, v=True)
@@ -105,11 +126,22 @@ class DockerSandboxProvider:
             pass
 
     def _remove_network(self, network):
-        try:
-            network.disconnect(self.settings.backend_container, force=True)
-        except NotFound:
-            pass
+        for name in (self.settings.backend_container, self.settings.egress_container):
+            try:
+                network.disconnect(name, force=True)
+            except NotFound:
+                continue
         network.remove()
+
+    def _connect(self, network, name):
+        container = self.client.containers.get(name)
+        network.connect(container)
+        network.reload()
+        return str(
+            ipaddress.IPv4Address(
+                network.attrs["Containers"][container.id]["IPv4Address"].split("/", 1)[0]
+            )
+        )
 
     async def cleanup_orphans(self) -> None:
         await asyncio.to_thread(self._cleanup_orphans)

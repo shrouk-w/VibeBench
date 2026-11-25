@@ -9,12 +9,13 @@ class Settings(BaseSettings):
 
     public: bool = False
     app_origin: str = "http://localhost:8080"
-    preview_domain: str = "localhost"
+    preview_domain: str = Field(default="localhost", pattern=r"^[a-z0-9][a-z0-9.-]{0,200}$")
     preview_port: int = Field(default=8080, ge=1, le=65535)
     sandbox_enabled: bool = False
     sandbox_image: str = "vibebench-sandbox:1.2.27"
     sandbox_runtime: str = "runc"
     backend_container: str = ""
+    egress_container: str = ""
     gateway_secret: str = ""
     docker_namespace: str = Field(default="local", pattern=r"^[a-z0-9-]{1,20}$")
     max_sessions: int = Field(default=1, ge=1, le=50)
@@ -31,10 +32,19 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def validate_launch(self):
         origin = urlsplit(self.app_origin)
-        if origin.scheme not in {"http", "https"} or not origin.hostname or origin.path:
+        if (
+            origin.scheme not in {"http", "https"}
+            or not origin.hostname
+            or origin.path
+            or origin.username
+            or origin.password
+            or origin.query
+            or origin.fragment
+            or self.app_origin != f"{origin.scheme}://{origin.netloc}"
+        ):
             raise ValueError("VB_APP_ORIGIN must be an HTTP origin without a path")
         if self.public:
             raise ValueError("Public launch is gated on production isolation verification")
-        if self.sandbox_enabled and not self.backend_container:
-            raise ValueError("Configure VB_BACKEND_CONTAINER for sandbox networking")
+        if self.sandbox_enabled and not (self.backend_container and self.egress_container):
+            raise ValueError("Configure VB_BACKEND_CONTAINER and VB_EGRESS_CONTAINER")
         return self
