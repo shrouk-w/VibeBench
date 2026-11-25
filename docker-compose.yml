@@ -1,0 +1,60 @@
+name: vibebench
+
+services:
+  sandbox-image:
+    image: vibebench-sandbox:1.2.27
+    build:
+      context: .
+      dockerfile: infrastructure/docker/sandbox.Dockerfile
+    profiles: [build]
+
+  backend:
+    container_name: vibebench-backend
+    build:
+      context: .
+      dockerfile: infrastructure/docker/backend.Dockerfile
+    env_file: .env
+    environment:
+      VB_BACKEND_CONTAINER: vibebench-backend
+      VB_GATEWAY_SECRET: ${VB_GATEWAY_SECRET:?Set VB_GATEWAY_SECRET in .env}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks: [platform]
+    restart: unless-stopped
+    mem_limit: 1g
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health/ready', timeout=3)"]
+      interval: 10s
+      timeout: 4s
+      retries: 5
+
+  frontend:
+    build:
+      context: frontend
+      dockerfile: ../infrastructure/docker/frontend.Dockerfile
+      args:
+        NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${NEXT_PUBLIC_TURNSTILE_SITE_KEY:-}
+    networks: [platform]
+    restart: unless-stopped
+    mem_limit: 512m
+
+  caddy:
+    image: caddy:2-alpine
+    env_file: .env
+    environment:
+      VB_GATEWAY_SECRET: ${VB_GATEWAY_SECRET:?Set VB_GATEWAY_SECRET in .env}
+    ports:
+      - "127.0.0.1:${VB_PREVIEW_PORT:-8080}:8080"
+    volumes:
+      - ./infrastructure/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+    networks: [platform]
+    depends_on:
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_started
+    restart: unless-stopped
+
+networks:
+  platform:
+    driver: bridge

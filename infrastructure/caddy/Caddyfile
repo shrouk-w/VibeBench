@@ -1,0 +1,35 @@
+{
+    admin off
+    auto_https off
+}
+
+:8080 {
+    @application host {$VB_APP_HOST:localhost}
+    handle @application {
+        @api path /api/*
+        handle @api {
+            request_body {
+                max_size 128KB
+            }
+            reverse_proxy backend:8000 {
+                header_up X-VB-Gateway {$VB_GATEWAY_SECRET}
+                header_up X-VB-Client {http.request.remote.host}
+            }
+        }
+        header {
+            Referrer-Policy "no-referrer"
+            X-Content-Type-Options "nosniff"
+            X-Frame-Options "DENY"
+        }
+        reverse_proxy frontend:3000
+    }
+    @preview host *.{$VB_PREVIEW_DOMAIN:localhost}
+    handle @preview {
+        reverse_proxy backend:8000 {
+            header_up X-VB-Gateway {$VB_GATEWAY_SECRET}
+        }
+    }
+    handle {
+        respond 404
+    }
+}
