@@ -126,9 +126,13 @@ class DockerSandboxProvider:
             pass
 
     def _remove_network(self, network):
-        for name in (self.settings.backend_container, self.settings.egress_container):
+        network.reload()
+        managed_services = {self.settings.backend_container, self.settings.egress_container}
+        for endpoint, connection in (network.attrs.get("Containers") or {}).items():
+            if connection.get("Name") not in managed_services:
+                continue
             try:
-                network.disconnect(name, force=True)
+                network.disconnect(endpoint, force=True)
             except NotFound:
                 continue
         network.remove()
