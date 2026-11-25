@@ -11,6 +11,7 @@ from app.models.catalog import BROKER_ENDPOINTS
 
 @dataclass
 class Grant:
+    provider: str
     endpoint: str
     model: str
     api_key: str
@@ -28,6 +29,7 @@ class CredentialBroker:
     def issue(self, provider: str, model: str, api_key: str, lifetime: int) -> str:
         token = token_urlsafe(32)
         self.grants[token] = Grant(
+            provider,
             BROKER_ENDPOINTS[provider],
             model,
             api_key,
@@ -35,8 +37,10 @@ class CredentialBroker:
         )
         return token
 
-    async def complete(self, request: Request):
-        token = request.headers.get("authorization", "").removeprefix("Bearer ")
+    async def complete(self, request: Request, operation: str):
+        token = request.headers.get("authorization", "").removeprefix(
+            "Bearer "
+        ) or request.headers.get("x-api-key", "")
         grant = self.grants.get(token)
         if (
             not grant
@@ -48,18 +52,31 @@ class CredentialBroker:
             raise HTTPException(403, "Invalid or inactive credential grant")
         if grant.remaining <= 0:
             raise HTTPException(429, "Provider request budget exhausted")
+        operation_for_provider = {
+            "openai": "responses",
+            "anthropic": "messages",
+        }.get(grant.provider, "chat/completions")
+        if operation != operation_for_provider:
+            raise HTTPException(403, "Operation is outside the credential grant")
         try:
             payload = await request.json()
         except ValueError as exc:
             raise HTTPException(400, "Invalid provider request") from exc
         if not isinstance(payload, dict) or payload.get("model") != grant.model:
             raise HTTPException(403, "Model is outside the credential grant")
+        if "models" in payload or "route" in payload:
+            raise HTTPException(403, "Model fallback is outside the credential grant")
+        headers = {"Authorization": f"Bearer {grant.api_key}"}
+        if grant.provider == "anthropic":
+            headers = {"x-api-key": grant.api_key, "anthropic-version": "2023-06-01"}
+        if grant.provider == "openai":
+            payload["store"] = False
         grant.remaining -= 1
         upstream = self.client.build_request(
             "POST",
             grant.endpoint,
             json=payload,
-            headers={"Authorization": f"Bearer {grant.api_key}"},
+            headers=headers,
         )
         try:
             response = await self.client.send(upstream, stream=True)

@@ -188,6 +188,7 @@ function Panel({
   action,
   download,
   loadFiles,
+  loadFile,
 }: {
   side: Side;
   run: Run;
@@ -196,11 +197,13 @@ function Panel({
   action: (suffix: string, text?: string) => Promise<void>;
   download: () => Promise<void>;
   loadFiles: () => Promise<string[]>;
+  loadFile: (file: string) => Promise<{ content: string }>;
 }) {
   const [tab, setTab] = useState<(typeof tabs)[number]>("Preview");
   const [mobile, setMobile] = useState(false);
   const [refresh, setRefresh] = useState(0);
   const [files, setFiles] = useState<string[] | null>(null);
+  const [source, setSource] = useState<{ name: string; content: string }>();
   const [stopping, setStopping] = useState(false);
   const screen = useRef<HTMLDivElement>(null);
   const visible = events.filter(
@@ -210,7 +213,7 @@ function Panel({
         ? event.kind === "terminal"
         : event.kind !== "terminal"),
   );
-  const ready = ["stopped", "ready", "failed"].includes(run.status);
+  const ready = ["running", "stopped", "ready", "failed"].includes(run.status);
   return (
     <section
       className={"panel " + (active ? "active-panel" : "")}
@@ -360,11 +363,29 @@ function Panel({
           {files?.length ? (
             <ul className="file-list">
               {files.map((file) => (
-                <li key={file}>{file}</li>
+                <li key={file}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void loadFile(file)
+                        .then(({ content }) =>
+                          setSource({ name: file, content }),
+                        )
+                        .catch(() => setSource(undefined));
+                    }}
+                  >
+                    {file}
+                  </button>
+                </li>
               ))}
             </ul>
           ) : (
             <p>No source files to display.</p>
+          )}
+          {source && (
+            <pre className="source-content" aria-label={source.name}>
+              {source.content}
+            </pre>
           )}
         </div>
       )}
@@ -707,6 +728,11 @@ export default function Home() {
                     response.json(),
                   )
                 }
+                loadFile={(file) =>
+                  request(
+                    "/" + side + "/file?path=" + encodeURIComponent(file),
+                  ).then((response) => response.json())
+                }
               />
             ))}
             <div
@@ -757,7 +783,7 @@ export default function Home() {
             label="Follow up with both agents"
             disabled={sides.some(
               (side) =>
-                !["ready", "stopped", "failed"].includes(
+                !["running", "ready", "stopped", "failed"].includes(
                   comparison.runs[side].status,
                 ),
             )}

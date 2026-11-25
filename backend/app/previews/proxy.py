@@ -1,5 +1,6 @@
 import asyncio
 import re
+from urllib.parse import urlsplit
 
 import httpx
 from starlette.datastructures import Headers
@@ -129,7 +130,8 @@ class PreviewProvider:
     async def websocket(self, scope, receive, send, target, session):
         socket = WebSocket(scope, receive, send)
         headers = Headers(scope=scope)
-        preview_origin = "http://" + headers["host"]
+        scheme = urlsplit(self.manager.settings.app_origin).scheme
+        preview_origin = f"{scheme}://" + headers["host"]
         if headers.get("origin") != preview_origin:
             await socket.close(1008)
             return

@@ -506,6 +506,15 @@ a.button:hover {
 .file-list li {
   padding: 4px 0;
 }
+.file-list button:hover {
+  color: var(--accent);
+}
+.source-content {
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+  margin-top: 12px;
+  overflow: auto;
+}
 .instruction {
   display: flex;
   gap: 7px;

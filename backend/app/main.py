@@ -35,7 +35,11 @@ class Gateway:
         state = scope["app"].state
         headers = Headers(scope=scope)
         path = scope["path"]
-        internal = path == "/internal/provider/chat/completions"
+        internal = path in {
+            "/internal/provider/chat/completions",
+            "/internal/provider/messages",
+            "/internal/provider/responses",
+        }
         health = path in {"/api/health/live", "/api/health/ready"}
         trusted = not state.settings.gateway_secret or compare_digest(
             headers.get("x-vb-gateway", "").encode(), state.settings.gateway_secret.encode()
@@ -228,6 +232,17 @@ def create_app(
             raise HTTPException(404, "Project not found")
         return await request.app.state.exporter.collect([session.runs[side]], listing=True)
 
+    @app.get("/api/comparisons/{session_id}/{side}/file")
+    async def file(request: Request, session_id: str, side: str, path: str):
+        session = owned(request, session_id)
+        if side not in SIDES or not 1 <= len(path) <= 1024:
+            raise HTTPException(404, "Source file not found")
+        content = await request.app.state.exporter.collect(
+            [session.runs[side]],
+            source_file=path,
+        )
+        return {"content": content}
+
     @app.websocket("/api/comparisons/{session_id}/events")
     async def events(socket: WebSocket, session_id: str):
         if socket.headers.get("origin") != settings.app_origin:
@@ -261,9 +276,9 @@ def create_app(
         except (HTTPException, ValueError, TypeError, AttributeError, TimeoutError):
             await socket.close(1008)
 
-    @app.post("/internal/provider/chat/completions")
-    async def complete(request: Request):
-        return await request.app.state.manager.broker.complete(request)
+    @app.post("/internal/provider/{operation:path}")
+    async def complete(request: Request, operation: str):
+        return await request.app.state.manager.broker.complete(request, operation)
 
     return app
 

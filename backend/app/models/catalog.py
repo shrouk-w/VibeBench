@@ -24,12 +24,14 @@ class ModelProvider(Protocol):
 
 
 BROKER_ENDPOINTS = {
+    "openai": "https://api.openai.com/v1/responses",
+    "anthropic": "https://api.anthropic.com/v1/messages",
     "openrouter": "https://openrouter.ai/api/v1/chat/completions",
     "groq": "https://api.groq.com/openai/v1/chat/completions",
     "deepseek": "https://api.deepseek.com/chat/completions",
     "google": "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
 }
-PROVIDERS = {"opencode", "openai", "anthropic", *BROKER_ENDPOINTS}
+PROVIDERS = {"opencode", *BROKER_ENDPOINTS}
 
 
 class ModelsDevProvider:

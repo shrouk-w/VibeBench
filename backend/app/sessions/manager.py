@@ -3,6 +3,7 @@ import hashlib
 import json
 from secrets import compare_digest, token_hex, token_urlsafe
 from time import monotonic
+from urllib.parse import urlsplit
 
 import httpx
 from docker.errors import DockerException
@@ -134,7 +135,10 @@ class SessionManager:
             config["model"] = f"{provider}/{run.model.id}"
             config["provider"] = {
                 provider: {
-                    "npm": "@ai-sdk/openai-compatible",
+                    "npm": {
+                        "openai": "@ai-sdk/openai",
+                        "anthropic": "@ai-sdk/anthropic",
+                    }.get(run.model.provider, "@ai-sdk/openai-compatible"),
                     "name": run.model.provider_name,
                     "options": {
                         "baseURL": "http://vb-broker.invalid/internal/provider",
@@ -144,6 +148,7 @@ class SessionManager:
                 }
             }
         config["enabled_providers"] = [provider]
+        config["small_model"] = config["model"]
         return {
             "OPENCODE_CONFIG_CONTENT": json.dumps(config),
             "OPENCODE_SERVER_PASSWORD": run.password,
@@ -193,19 +198,40 @@ class SessionManager:
         while not session.destroying:
             try:
                 async for event in self.agents.events(run.agent, connected):
-                    self.handle_event(session, run, event)
+                    await self.handle_event(session, run, event)
             except (httpx.HTTPError, ValueError):
                 if not session.destroying:
                     self.emit(session, run, "activity", "Agent event stream disconnected")
             await asyncio.sleep(1)
 
-    def handle_event(self, session, run, event):
+    async def handle_event(self, session, run, event):
         kind = event.get("type")
         props = event.get("properties", {})
         part = props.get("part", {})
         if (props.get("sessionID") or part.get("sessionID")) != run.agent.session_id:
             return
-        if kind == "session.error" and run.status == Status.RUNNING and not run.stopping:
+        if kind == "session.status" and run.status == Status.RUNNING and not run.stopping:
+            status = props.get("status", {})
+            if status.get("type") == "retry":
+                message = str(status.get("message", "Provider requested a retry"))
+                if "Free usage exceeded" in message or status.get("attempt", 0) >= 3:
+                    run.stopping = True
+                    try:
+                        await self.agents.abort(run.agent)
+                    except httpx.HTTPError:
+                        self.emit(session, run, "activity", "OpenCode could not cancel its retry")
+                    finally:
+                        run.stopping = False
+                    if not session.destroying:
+                        note = (
+                            "OpenCode free usage limit reached"
+                            if "Free usage exceeded" in message
+                            else message
+                        )
+                        self.status(session, run, Status.FAILED, note)
+                else:
+                    self.emit(session, run, "activity", message)
+        elif kind == "session.error" and run.status == Status.RUNNING and not run.stopping:
             error = props.get("error", {})
             message = error.get("data", {}).get("message") or "Model execution failed"
             self.status(session, run, Status.FAILED, str(message))
@@ -250,17 +276,22 @@ class SessionManager:
             or run.stopping
             or run.status
             not in {
+                Status.RUNNING,
                 Status.STOPPED,
                 Status.READY,
                 Status.FAILED,
             }
         ):
-            raise HTTPException(409, "Agent must be stopped or finished before continuing")
-        self.status(session, run, Status.RUNNING, "Agent resumed")
+            raise HTTPException(409, "Agent is unavailable for follow-up instructions")
+        was_running = run.status == Status.RUNNING
+        if not was_running:
+            self.status(session, run, Status.RUNNING, "Agent resumed")
         try:
             await self.agents.prompt(run.agent, f"{text}\n\n{PREVIEW_GUIDANCE}")
+            if was_running:
+                self.emit(session, run, "activity", "Follow-up sent")
         except httpx.HTTPError:
-            if not session.destroying:
+            if not session.destroying and not was_running:
                 self.status(session, run, Status.FAILED, "OpenCode rejected the instruction")
             raise HTTPException(502, "OpenCode rejected the instruction") from None
 
@@ -324,8 +355,11 @@ class SessionManager:
                         continue
 
     def view(self, session):
-        origin = "http"
-        port = f":{self.settings.preview_port}"
+        scheme = urlsplit(self.settings.app_origin).scheme
+        default_port = 443 if scheme == "https" else 80
+        port = (
+            "" if self.settings.preview_port == default_port else f":{self.settings.preview_port}"
+        )
         return {
             "id": session.id,
             "expires_in": self.remaining(session),
@@ -334,7 +368,7 @@ class SessionManager:
                     "model": run.model.name,
                     "provider": run.model.provider_name,
                     "status": run.status,
-                    "preview_url": f"{origin}://vb-{run.capability}.{self.settings.preview_domain}{port}"
+                    "preview_url": f"{scheme}://vb-{run.capability}.{self.settings.preview_domain}{port}"
                     if run.preview
                     else None,
                 }
