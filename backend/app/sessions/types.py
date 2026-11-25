@@ -32,6 +32,7 @@ class CreateComparison(BaseModel):
     prompt: str = Field(min_length=1, max_length=12_000)
     models: tuple[ModelChoice, ModelChoice]
     integrations: list[str] = Field(default_factory=list, max_length=5)
+    github_token: SecretStr | None = None
     turnstile_token: str = Field(default="", max_length=2048)
 
 
@@ -52,6 +53,7 @@ class Run:
     agent: Agent | None = None
     preview: bool = False
     stopping: bool = False
+    mcp_grants: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -68,3 +70,8 @@ class Comparison:
     destroying: bool = False
     tasks: set = field(default_factory=set)
     provisioning: set = field(default_factory=set)
+    figma_verifier: str = ""
+    figma_url: str = ""
+    figma_state: str = ""
+    figma_deadline: float = 0
+    figma_error: str = ""

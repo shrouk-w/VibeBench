@@ -10,6 +10,8 @@ from docker.errors import DockerException
 from fastapi import HTTPException
 
 from app.agents.opencode import PREVIEW_GUIDANCE, AgentProvider
+from app.mcp.broker import RemoteMCPBroker
+from app.mcp.figma import FigmaOAuth
 from app.mcp.registry import MCPProvider
 from app.models.catalog import ModelProvider
 from app.sandboxes.docker_provider import SandboxProvider
@@ -36,6 +38,8 @@ class SessionManager:
         self.catalog = catalog
         self.mcp = mcp
         self.broker = broker
+        self.mcp_broker = RemoteMCPBroker(client)
+        self.figma = FigmaOAuth(client, settings)
         self.sandboxes = sandboxes
         self.agents = agents
         self.sessions: dict[str, Comparison] = {}
@@ -48,7 +52,7 @@ class SessionManager:
         if len(self.sessions) >= self.settings.max_sessions:
             raise HTTPException(429, "All comparison slots are in use")
         try:
-            config = self.mcp.config(request.integrations)
+            self.mcp.validate(request.integrations)
             models = {(model.provider, model.id): model for model in await self.catalog.list()}
         except (httpx.HTTPError, AttributeError):
             raise HTTPException(502, "Model catalog is temporarily unavailable") from None
@@ -67,6 +71,13 @@ class SessionManager:
             if model.requires_key and any(ord(char) <= 32 or ord(char) >= 127 for char in key):
                 raise HTTPException(422, "Enter a valid provider API key")
             selections.append((model, key))
+        github_key = request.github_token.get_secret_value().strip() if request.github_token else ""
+        if "github" in request.integrations and (
+            not github_key.startswith("github_pat_")
+            or not 20 <= len(github_key) <= 512
+            or not all(char.isascii() and (char.isalnum() or char == "_") for char in github_key)
+        ):
+            raise HTTPException(422, "Enter a fine-grained GitHub personal access token")
         runs = {}
         for side, (model, key) in zip(("a", "b"), selections, strict=True):
             grant = None
@@ -84,10 +95,56 @@ class SessionManager:
             runs,
         )
         self.sessions[session.id] = session
-        for run in runs.values():
-            self.previews[run.capability] = (session, run)
-            self.spawn(session, self.provision(session, run, config), provisioning=True)
+        if "github" in session.integrations:
+            self.issue_mcp_grants(session, "github", github_key)
+        if "figma" in session.integrations:
+            await self.figma.start(session)
+        else:
+            self.launch(session)
         return session, token
+
+    def issue_mcp_grants(self, session, name, key):
+        expires = session.created + self.settings.lifetime_seconds
+        for run in session.runs.values():
+            run.mcp_grants[name] = self.mcp_broker.issue(name, key, expires)
+
+    def launch(self, session):
+        for run in session.runs.values():
+            self.previews[run.capability] = (session, run)
+            config = self.mcp.config(session.integrations, run.mcp_grants)
+            self.spawn(session, self.provision(session, run, config), provisioning=True)
+
+    async def finish_figma(self, state, code):
+        session = next(
+            (
+                item
+                for item in self.sessions.values()
+                if not item.destroying
+                and item.figma_state
+                and compare_digest(item.figma_state, state)
+            ),
+            None,
+        )
+        if not session or monotonic() >= session.figma_deadline:
+            return False
+        session.figma_state = ""
+        session.figma_url = ""
+        session.activity = monotonic()
+        try:
+            if not code:
+                raise ValueError("Figma sign-in was cancelled")
+            key = await self.figma.finish(session, code)
+            if session.destroying:
+                return False
+            self.issue_mcp_grants(session, "figma", key)
+        except (httpx.HTTPError, ValueError, KeyError):
+            session.figma_verifier = ""
+            session.figma_error = "Figma could not connect. End the session to retry."
+            return False
+        if session.destroying:
+            return False
+        self.launch(session)
+        return True
 
     def owned(self, session_id: str, token: str) -> Comparison:
         session = self.sessions.get(session_id)
@@ -108,6 +165,8 @@ class SessionManager:
         for item in session.runs.values():
             if item.grant:
                 secrets.extend((item.grant, self.broker.grants[item.grant].api_key))
+            for grant in item.mcp_grants.values():
+                secrets.extend((grant, self.mcp_broker.grants[grant].key))
         for value in secrets:
             text = text.replace(value, "[redacted]")
         session.sequence += 1
@@ -164,6 +223,8 @@ class SessionManager:
                 return
             if run.grant:
                 self.broker.grants[run.grant].address = run.sandbox.address
+            for grant in run.mcp_grants.values():
+                self.mcp_broker.grants[grant].address = run.sandbox.address
             run.agent = await self.agents.connect(
                 run.sandbox,
                 run.password,
@@ -172,6 +233,19 @@ class SessionManager:
             )
             if session.destroying:
                 return
+            if mcp_config:
+                states = await self.agents.mcp_status(run.agent)
+                failed = [
+                    name for name in mcp_config if states.get(name, {}).get("status") != "connected"
+                ]
+                if failed:
+                    self.status(
+                        session, run, Status.FAILED, "MCP could not connect: " + ", ".join(failed)
+                    )
+                    run.agent = None
+                    await self.release(run)
+                    return
+                self.emit(session, run, "activity", "MCP connected: " + ", ".join(mcp_config))
             connected = asyncio.Event()
             self.spawn(session, self.watch_events(session, run, connected))
             self.spawn(session, self.watch_preview(session, run))
@@ -323,6 +397,9 @@ class SessionManager:
                 if run.grant:
                     self.broker.grants.pop(run.grant, None)
                     run.grant = None
+                for token in run.mcp_grants.values():
+                    self.mcp_broker.grants.pop(token, None)
+                run.mcp_grants.clear()
                 run.status = Status.DESTROYED
             results = await asyncio.gather(
                 *(self.release(run) for run in session.runs.values()),
@@ -353,6 +430,11 @@ class SessionManager:
                         await self.destroy(session)
                     except HTTPException:
                         continue
+                elif session.figma_state and monotonic() >= session.figma_deadline:
+                    session.figma_state = ""
+                    session.figma_url = ""
+                    session.figma_verifier = ""
+                    session.figma_error = "Figma sign-in expired. End the session to retry."
 
     def view(self, session):
         scheme = urlsplit(self.settings.app_origin).scheme
@@ -363,6 +445,13 @@ class SessionManager:
         return {
             "id": session.id,
             "expires_in": self.remaining(session),
+            "figma": {
+                "url": session.figma_url,
+                "error": session.figma_error,
+            }
+            if "figma" in session.integrations
+            and all(run.status == Status.CREATED for run in session.runs.values())
+            else None,
             "runs": {
                 side: {
                     "model": run.model.name,

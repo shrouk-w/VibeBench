@@ -63,11 +63,13 @@ services:
 
   caddy:
     image: caddy:2-alpine
-    env_file: .env
     environment:
       VB_GATEWAY_SECRET: ${VB_GATEWAY_SECRET:?Set VB_GATEWAY_SECRET in .env}
+      VB_APP_HOST: ${VB_APP_HOST:-localhost}
+      VB_PREVIEW_DOMAIN: ${VB_PREVIEW_DOMAIN:-localhost}
     ports:
       - "127.0.0.1:${VB_PREVIEW_PORT:-8080}:8080"
+      - "127.0.0.1:19876:19876"
     volumes:
       - ./infrastructure/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
     networks: [platform]

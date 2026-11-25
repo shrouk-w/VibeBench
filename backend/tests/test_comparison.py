@@ -1,4 +1,5 @@
 import asyncio
+from time import monotonic
 
 from fastapi.testclient import TestClient
 
@@ -54,6 +55,9 @@ class Agents:
 
     async def abort(self, agent):
         self.aborts.append(agent.session_id)
+
+    async def mcp_status(self, agent):
+        return {"figma": {"status": "connected"}}
 
     async def events(self, agent, connected):
         connected.set()
@@ -132,3 +136,60 @@ def test_catalog_filters_discovery_and_status():
     }
     models = ModelsDevProvider.parse(providers, {"available", "paid"})
     assert [model.id for model in models] == ["available"]
+
+
+def test_figma_callback_starts_both_agents_only_after_authorization():
+    state = "a" * 64
+
+    class Figma:
+        async def start(self, session):
+            session.figma_url = "https://www.figma.com/oauth/mcp"
+            session.figma_state = state
+            session.figma_deadline = monotonic() + 300
+
+        async def finish(self, session, code):
+            assert code == "test-code"
+            return "test-access-token"
+
+    app = create_app(
+        Settings(
+            sandbox_enabled=True,
+            backend_container="mock",
+            egress_container="mock",
+            figma_client_id="fixture",
+            figma_client_secret="fixture",
+        ),
+        sandbox_factory=Sandboxes,
+        agent_factory=Agents,
+        catalog_factory=Catalog,
+    )
+    with TestClient(app) as client:
+        app.state.manager.figma = Figma()
+        response = client.post(
+            "/api/comparisons",
+            headers={"Origin": ORIGIN},
+            json={
+                "prompt": "Use this design",
+                "models": [{"provider": "opencode", "model": "test"}] * 2,
+                "integrations": ["figma"],
+            },
+        )
+        assert response.status_code == 201
+        session = response.json()
+        path = f"/api/comparisons/{session['id']}"
+        with client.websocket_connect(path + "/events", headers={"Origin": ORIGIN}) as socket:
+            socket.send_json({"token": session["token"], "after": 0})
+            assert socket.receive_json()["session"]["figma"]["url"]
+            assert not app.state.manager.agents.prompts
+            callback = f"/api/figma/callback?state={state}&code=test-code"
+            assert client.get(callback + "&iss=https://invalid.example").status_code == 400
+            assert client.get(callback).status_code == 200
+            assert client.get(callback).status_code == 400
+            for _ in range(4):
+                socket.receive_json()
+                if len(app.state.manager.agents.prompts) == 2:
+                    break
+            assert len(app.state.manager.agents.prompts) == 2
+            assert len(app.state.manager.mcp_broker.grants) == 2
+            for _, env in app.state.manager.sandboxes.created:
+                assert "test-access-token" not in env["OPENCODE_CONFIG_CONTENT"]

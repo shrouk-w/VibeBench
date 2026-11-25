@@ -419,6 +419,7 @@ export default function Home() {
   const [keys, setKeys] = useState<Record<Side, string>>({ a: "", b: "" });
   const [reuse, setReuse] = useState(false);
   const [tools, setTools] = useState<string[]>([]);
+  const [githubToken, setGitHubToken] = useState("");
   const [prompt, setPrompt] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -566,6 +567,7 @@ export default function Home() {
           prompt,
           models,
           integrations: tools,
+          github_token: tools.includes("github") ? githubToken : null,
           turnstile_token: challenge,
         }),
       });
@@ -573,6 +575,7 @@ export default function Home() {
         await response.json();
       setEvents([]);
       setKeys({ a: "", b: "" });
+      setGitHubToken("");
       setComparison(session);
       setOwner(token);
       setOnline(false);
@@ -714,6 +717,30 @@ export default function Home() {
             </div>
           </div>
           {alert}
+          {comparison.figma && (
+            <div className="quota-notice">
+              <div role="status">
+                <strong>Figma authorization</strong>
+                <p>
+                  {comparison.figma.error ||
+                    (comparison.figma.url
+                      ? "Sign in once to connect both agents. The comparison starts after authorization."
+                      : "Preparing Figma sign-in…")}
+                </p>
+              </div>
+              {comparison.figma.url && (
+                <Button asChild variant="outline">
+                  <a
+                    href={comparison.figma.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    Connect Figma <ArrowUpRight size={16} />
+                  </a>
+                </Button>
+              )}
+            </div>
+          )}
           {canRecoverFromFreeLimit && (
             <div className="quota-notice">
               <div role="status">
@@ -913,6 +940,22 @@ export default function Home() {
                       </span>
                     </label>
                   ))}
+                  {tools.includes("github") && (
+                    <label className="key-label">
+                      Fine-grained GitHub token
+                      <input
+                        type="password"
+                        autoComplete="off"
+                        required
+                        value={githubToken}
+                        onChange={(event) => setGitHubToken(event.target.value)}
+                      />
+                      <small>
+                        Choose which repositories to share and grant read-only
+                        access.
+                      </small>
+                    </label>
+                  )}
                 </details>
               )}
               {siteKey && <div ref={widget} />}
@@ -930,6 +973,7 @@ export default function Home() {
                     !prompt.trim() ||
                     !chosen.a ||
                     !chosen.b ||
+                    (tools.includes("github") && !githubToken.trim()) ||
                     Boolean(siteKey && !challenge)
                   }
                 >

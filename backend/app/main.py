@@ -3,9 +3,9 @@ from contextlib import asynccontextmanager, suppress
 from secrets import compare_digest
 
 import httpx
-from fastapi import FastAPI, HTTPException, Request, Response, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Query, Request, Response, WebSocket, WebSocketDisconnect
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from starlette.datastructures import Headers
 
 from app.agents.opencode import OpenCodeAgentProvider
@@ -39,6 +39,8 @@ class Gateway:
             "/internal/provider/chat/completions",
             "/internal/provider/messages",
             "/internal/provider/responses",
+            "/internal/mcp/github",
+            "/internal/mcp/figma",
         }
         health = path in {"/api/health/live", "/api/health/ready"}
         trusted = not state.settings.gateway_secret or compare_digest(
@@ -101,7 +103,7 @@ def create_app(
             if sandboxes:
                 await sandboxes.cleanup_orphans()
             broker = CredentialBroker(client)
-            mcp = MCPProvider()
+            mcp = MCPProvider(settings.figma_configured)
             catalog = catalog_factory(client)
             manager = SessionManager(
                 settings, client, catalog, mcp, broker, sandboxes, agent_factory(client)
@@ -156,8 +158,30 @@ def create_app(
             raise HTTPException(502, "Model catalog is temporarily unavailable") from None
 
     @app.get("/api/integrations")
-    async def integrations():
-        return MCPProvider.integrations
+    async def integrations(request: Request):
+        return request.app.state.manager.mcp.integrations
+
+    @app.get("/api/figma/callback")
+    async def figma_callback(
+        request: Request,
+        state: str = Query(pattern=r"^[a-f0-9]{64}$"),
+        code: str = Query(default="", max_length=4096),
+        iss: str = Query(default="https://api.figma.com", max_length=128),
+    ):
+        connected = iss == "https://api.figma.com" and (
+            await request.app.state.manager.finish_figma(state, code)
+        )
+        return PlainTextResponse(
+            "Figma connected. Return to VibeBench."
+            if connected
+            else "Figma sign-in expired or could not connect.",
+            status_code=200 if connected else 400,
+            headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"},
+        )
+
+    @app.api_route("/internal/mcp/{name}", methods=["POST", "GET"])
+    async def mcp_transport(name: str, request: Request):
+        return await request.app.state.manager.mcp_broker.forward(name, request)
 
     @app.post("/api/comparisons", status_code=201)
     async def create(request: Request, spec: CreateComparison):

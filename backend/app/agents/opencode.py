@@ -37,11 +37,17 @@ class AgentProvider(Protocol):
     async def prompt(self, agent: Agent, text: str) -> None: ...
     async def abort(self, agent: Agent) -> None: ...
     def events(self, agent: Agent, connected: asyncio.Event) -> AsyncIterator[dict]: ...
+    async def mcp_status(self, agent: Agent) -> dict: ...
 
 
 class OpenCodeAgentProvider:
     def __init__(self, client: httpx.AsyncClient):
         self.client = client
+
+    async def mcp_status(self, agent):
+        response = await self.client.get(f"{agent.base}/mcp", auth=agent.auth, timeout=35)
+        response.raise_for_status()
+        return response.json()
 
     async def connect(self, sandbox, password, provider, model):
         base = sandbox.url(4096)

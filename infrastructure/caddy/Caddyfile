@@ -3,6 +3,21 @@
     auto_https off
 }
 
+:19876 {
+    @figma {
+        host 127.0.0.1
+        path /callback
+        method GET
+    }
+    handle @figma {
+        rewrite * /api/figma/callback
+        reverse_proxy backend:8000 {
+            header_up X-VB-Gateway {$VB_GATEWAY_SECRET}
+        }
+    }
+    respond 404
+}
+
 :8080 {
     @application host {$VB_APP_HOST:localhost}
     handle @application {

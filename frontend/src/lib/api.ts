@@ -24,6 +24,7 @@ export type Run = {
 export type Comparison = {
   id: string;
   expires_in: number;
+  figma?: { url: string; error: string } | null;
   runs: Record<Side, Run>;
 };
 export type Activity = { id: number; side: Side; kind: string; text: string };

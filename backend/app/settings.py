@@ -1,6 +1,6 @@
 from urllib.parse import urlsplit
 
-from pydantic import Field, model_validator
+from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -30,6 +30,12 @@ class Settings(BaseSettings):
     export_mb: int = Field(default=48, ge=1, le=256)
     turnstile_secret: str = ""
     turnstile_hostname: str = "localhost"
+    figma_client_id: str = ""
+    figma_client_secret: SecretStr = SecretStr("")
+
+    @property
+    def figma_configured(self) -> bool:
+        return bool(self.figma_client_id and self.figma_client_secret.get_secret_value())
 
     @model_validator(mode="after")
     def validate_launch(self):
