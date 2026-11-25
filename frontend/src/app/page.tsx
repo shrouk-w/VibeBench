@@ -616,6 +616,33 @@ export default function Home() {
     }
   }
 
+  async function endComparison() {
+    setBusy(true);
+    try {
+      await request("", { method: "DELETE" });
+      setComparison(undefined);
+      setOwner("");
+      setChallenge("");
+      setError("");
+    } catch {
+      /* Reported by request. */
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const canRecoverFromFreeLimit =
+    comparison &&
+    sides.every((side) => {
+      const run = comparison.runs[side];
+      return run.status === "failed" && !run.preview_url;
+    }) &&
+    events.some(
+      (event) =>
+        event.kind === "status" &&
+        event.text === "OpenCode free usage limit reached",
+    );
+
   const selectedA = catalog.find(
     (model) => model.provider + "/" + model.id === chosen.a,
   );
@@ -681,23 +708,26 @@ export default function Home() {
               <Button variant="outline" onClick={() => void download("both")}>
                 <ArrowDownToLine size={16} /> Export both
               </Button>
-              <Button
-                variant="outline"
-                onClick={async () => {
-                  try {
-                    await request("", { method: "DELETE" });
-                    setComparison(undefined);
-                    setOwner("");
-                  } catch {
-                    /* Reported by request. */
-                  }
-                }}
-              >
+              <Button variant="outline" disabled={busy} onClick={endComparison}>
                 <X size={16} /> End session
               </Button>
             </div>
           </div>
           {alert}
+          {canRecoverFromFreeLimit && (
+            <div className="quota-notice">
+              <div role="status">
+                <strong>OpenCode free usage limit reached</strong>
+                <p>
+                  Choose another provider to retry. Your prompt will stay in the
+                  form.
+                </p>
+              </div>
+              <Button variant="outline" disabled={busy} onClick={endComparison}>
+                End session and change models
+              </Button>
+            </div>
+          )}
           <div className="mobile-switch" aria-label="Visible application">
             {sides.map((side) => (
               <Button

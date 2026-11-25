@@ -75,6 +75,70 @@ test("loads the comparison workspace with mocked API data", async ({
   ).toBeVisible();
 });
 
+test("keeps the prompt when switching models after a free quota failure", async ({
+  page,
+}) => {
+  const failed = {
+    model: "Free A",
+    provider: "OpenCode",
+    status: "failed",
+    preview_url: null,
+  };
+  const session = {
+    id: "quota-test",
+    expires_in: 600,
+    runs: { a: failed, b: failed },
+  };
+  await page.route("**/api/models", (route) =>
+    route.fulfill({ json: [model("Free A")] }),
+  );
+  await page.route("**/api/integrations", (route) =>
+    route.fulfill({ json: [] }),
+  );
+  await page.route("**/api/comparisons", (route) =>
+    route.fulfill({
+      json: { ...session, token: "test-owner-token" },
+    }),
+  );
+  await page.routeWebSocket(
+    "**/api/comparisons/quota-test/events",
+    (socket) => {
+      socket.onMessage(() =>
+        socket.send(
+          JSON.stringify({
+            session,
+            events: [
+              {
+                id: 1,
+                side: "a",
+                kind: "status",
+                text: "OpenCode free usage limit reached",
+              },
+            ],
+          }),
+        ),
+      );
+    },
+  );
+  await page.route("**/api/comparisons/quota-test", async (route) => {
+    expect(route.request().method()).toBe("DELETE");
+    expect(await route.request().headerValue("authorization")).toBe(
+      "Bearer test-owner-token",
+    );
+    await route.fulfill({ status: 204 });
+  });
+  await page.goto("/");
+  const prompt = page.getByLabel("Application prompt");
+  await prompt.fill("Build a responsive web app.");
+  await page.getByLabel("Model A").selectOption("opencode/Free A");
+  await page.getByLabel("Model B").selectOption("opencode/Free A");
+  await page.getByRole("button", { name: "Start comparison" }).click();
+  await page
+    .getByRole("button", { name: "End session and change models" })
+    .click();
+  await expect(prompt).toHaveValue("Build a responsive web app.");
+});
+
 test("generates, interacts with, exports and removes two real apps", async ({
   page,
   request,

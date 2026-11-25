@@ -361,6 +361,23 @@ a.button:hover {
 .workspace > .error {
   margin-bottom: 12px;
 }
+.quota-notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface);
+  font-size: 13px;
+}
+.quota-notice p {
+  margin: 3px 0 0;
+  color: var(--muted);
+}
 .workspace-grid {
   position: relative;
   display: grid;
