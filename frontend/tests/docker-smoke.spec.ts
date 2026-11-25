@@ -105,7 +105,7 @@ test("isolates two Docker sandboxes and proxies fixture applications", async ({
         containers[0],
         "sh",
         "-c",
-        'curl -fsS --noproxy "*" --max-time 2 "$1" >/dev/null 2>&1 && echo open || echo blocked',
+        'curl -sS --noproxy "*" --max-time 2 "$1" >/dev/null 2>&1 && echo open || echo blocked',
         "sh",
         "http://" + address + ":4173",
       ]),
@@ -116,7 +116,7 @@ test("isolates two Docker sandboxes and proxies fixture applications", async ({
         containers[0],
         "sh",
         "-c",
-        'curl -fsS --noproxy "*" --max-time 2 http://169.254.169.254/ >/dev/null 2>&1 && echo open || echo blocked',
+        'curl -sS --noproxy "*" --max-time 2 http://169.254.169.254/ >/dev/null 2>&1 && echo open || echo blocked',
       ]),
     ).toBe("blocked");
     expect(
@@ -158,9 +158,9 @@ test("isolates two Docker sandboxes and proxies fixture applications", async ({
     }
     expect((await request.get(route + "/a/files")).status()).toBe(404);
     const listing = await request.get(route + "/a/files", { headers: auth });
-    const names = await listing.json();
-    expect(names).toContain("server.cjs");
-    expect(names).not.toContain("secret-link");
+    const files = await listing.json();
+    expect(files).toContain("server.cjs");
+    expect(files).not.toContain("secret-link");
     const source = await request.get(route + "/a/file?path=server.cjs", {
       headers: auth,
     });
