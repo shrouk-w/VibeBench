@@ -56,6 +56,15 @@ class DockerSandboxProvider:
             environment = {
                 **configuration,
                 "HOME": "/tmp/vb-home",
+                "XDG_DATA_HOME": "/vb-state/data",
+                "XDG_STATE_HOME": "/vb-state/state",
+                "XDG_CONFIG_HOME": "/vb-state/config",
+                "XDG_CACHE_HOME": "/vb-cache/xdg",
+                "NPM_CONFIG_CACHE": "/vb-cache/npm",
+                "PNPM_HOME": "/vb-cache/pnpm",
+                "npm_config_store_dir": "/vb-cache/pnpm/store",
+                "PIP_CACHE_DIR": "/vb-cache/pip",
+                "BUN_INSTALL_CACHE_DIR": "/vb-cache/bun",
                 "HTTPS_PROXY": proxy,
                 "https_proxy": proxy,
                 "HTTP_PROXY": proxy,
@@ -87,6 +96,12 @@ class DockerSandboxProvider:
                         f"rw,nodev,nosuid,size={settings.workspace_mb}m,uid=1000,gid=1000"
                     ),
                     "/tmp": "rw,nodev,nosuid,size=192m,mode=1777",
+                    "/vb-state": (
+                        f"rw,nodev,nosuid,size={settings.agent_state_mb}m,uid=1000,gid=1000,mode=0700"
+                    ),
+                    "/vb-cache": (
+                        f"rw,nodev,nosuid,size={settings.sandbox_cache_mb}m,uid=1000,gid=1000,mode=0700"
+                    ),
                 },
                 log_config={"type": "none"},
                 environment=environment,

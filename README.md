@@ -38,6 +38,8 @@ docker compose down
 
 Restarting FastAPI cleans orphaned resources in the configured Docker namespace and ends its active comparisons. Review `VB_MAX_SESSIONS`, `VB_IDLE_SECONDS`, `VB_LIFETIME_SECONDS`, and the sandbox resource limits in `.env.example`. Add approved HTTPS registry or CDN hostnames through `VB_EXTRA_EGRESS_HOSTS` as a space-separated list. OpenCode is pinned to 1.2.27 with checksum-verified release binaries.
 
+Package caches and OpenCode session data use separate temporary mounts. Tune them with `VB_SANDBOX_CACHE_MB` and `VB_AGENT_STATE_MB`. Memory used by these mounts counts toward `VB_SANDBOX_MEMORY_MB`.
+
 ## Models and MCP
 
 The catalog intersects advertised zero-cost, tool-capable Models.dev entries with OpenCode Zen's current model discovery endpoint. OpenCode checks its own catalog inside each sandbox before sending a prompt. Free availability and quota can change. The interface reports exhaustion and keeps the selected model. Review provider terms and privacy before sending data. [OpenCode Zen](https://dev.opencode.ai/docs/zen)

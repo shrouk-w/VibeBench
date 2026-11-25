@@ -23,6 +23,8 @@ class Settings(BaseSettings):
     lifetime_seconds: int = Field(default=7200, ge=60)
     sandbox_memory_mb: int = Field(default=1536, ge=256)
     workspace_mb: int = Field(default=512, ge=32)
+    sandbox_cache_mb: int = Field(default=384, ge=32)
+    agent_state_mb: int = Field(default=128, ge=16)
     sandbox_cpus: float = Field(default=1.0, gt=0)
     sandbox_pids: int = Field(default=256, ge=32)
     export_mb: int = Field(default=48, ge=1, le=256)

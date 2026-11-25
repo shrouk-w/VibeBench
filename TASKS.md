@@ -32,4 +32,5 @@
 - Backend restart removed a labeled orphan container and its network, including networks without attached platform services.
 - The sandbox image built for Linux ARM64 and ran `opencode --version` under emulation. This checks the image, not native gVisor or OCI behavior.
 - Two real model attempts used distinct OpenCode free models. OpenCode returned a free usage limit instead of completing app generation. The live smoke test stays opt-in and reports this failure.
+- A user-run OpenRouter comparison produced an interactive DeepSeek preview. The other agent ran out of temporary space. A Docker test confirmed that newer sandboxes can still write OpenCode sessions after the package cache fills.
 - No public deployment or paid resources were provisioned.
