@@ -46,7 +46,7 @@ The catalog intersects advertised zero-cost, tool-capable Models.dev entries wit
 
 BYOK supports fixed endpoints for OpenAI, Anthropic, Gemini, OpenRouter, DeepSeek and Groq. Enter keys through the model selector and enable key reuse when the two agents use the same provider. Raw provider keys stay in backend memory. A workspace receives a short-lived, model-scoped broker grant. Providers can bill the account for requested model usage. Arbitrary provider URLs are disabled.
 
-Context7 uses a fixed remote MCP endpoint and may enforce upstream authentication or usage limits. Playwright, Figma, Blender and GitHub are listed in the registry as unavailable. Custom MCP servers require separate isolation and authorization.
+Context7 and Playwright work without accounts. GitHub accepts a fine-grained token for read-only repository access. A configured Figma MCP OAuth client supports one sign-in for both agents. Blender remains unavailable. See the [MCP setup guide](docs/mcp.md).
 
 ## Development
 

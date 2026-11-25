@@ -6,7 +6,7 @@
 - [ ] 04 OpenCode HTTP integration. Two real sessions accepted prompts. Successful upstream generation remains blocked by OpenCode free quota.
 - [ ] 05 Model discovery and BYOK broker. Live free catalog and mock credential forwarding verified. Live BYOK and public free-provider terms pending.
 - [ ] 06 Preview routing. Both isolated origins, interactivity and WebSocket forwarding verified locally with fixture applications. Production HTTPS pending.
-- [ ] 07 MCP registry. Context7 configured. Live Context7, Playwright, Figma, Blender and GitHub validation pending.
+- [ ] 07 Context7, Playwright and read-only GitHub are selectable. Figma OAuth requires an approved client registration. Account-backed authorization tests and native ARM64 browser validation remain open. Blender is deferred.
 - [x] 08 Authenticated, reconnectable WebSockets and bounded agent activity
 - [x] 09 Responsive comparison workspace with display controls and source viewer
 - [x] 10 Bounded ZIP exports from ephemeral workspaces
@@ -33,4 +33,5 @@
 - The sandbox image built for Linux ARM64 and ran `opencode --version` under emulation. This checks the image, not native gVisor or OCI behavior.
 - Two real model attempts used distinct OpenCode free models. OpenCode returned a free usage limit instead of completing app generation. The live smoke test stays opt-in and reports this failure.
 - A user-run OpenRouter comparison produced an interactive DeepSeek preview. The other agent ran out of temporary space. A Docker test confirmed that newer sandboxes can still write OpenCode sessions after the package cache fills.
+- OpenCode connected to Context7 and Playwright inside a Docker sandbox without account credentials. Playwright navigated to a local fixture with Chromium.
 - No public deployment or paid resources were provisioned.
