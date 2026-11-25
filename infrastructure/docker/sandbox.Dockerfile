@@ -1,9 +1,9 @@
 FROM node:22-bookworm-slim
 ARG TARGETARCH
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates curl git python3 python3-venv ripgrep tini \
+    ca-certificates chromium curl git python3 python3-venv ripgrep tini \
     && rm -rf /var/lib/apt/lists/* \
-    && npm install -g pnpm@10.34.9 \
+    && npm install -g pnpm@10.34.9 @playwright/mcp@0.0.86 \
     && npm cache clean --force \
     && case "$TARGETARCH" in \
       amd64) variant=x64; digest=6fe3820b145857f7ff507d2826058b7acf1fce8258def1498468dd43809e69e8 ;; \
