@@ -29,6 +29,7 @@
 ## Validation evidence
 
 - Windows Docker Desktop using Linux AMD64. Both isolated Docker workspaces served fixture apps with interactive HTTP and WebSocket previews. The browser test downloaded a combined ZIP and verified sandbox removal.
+- Backend restart removed a labeled orphan container and its network, including networks without attached platform services.
 - The sandbox image built for Linux ARM64 and ran `opencode --version` under emulation. This checks the image, not native gVisor or OCI behavior.
 - Two real model attempts used distinct OpenCode free models. OpenCode returned a free usage limit instead of completing app generation. The live smoke test stays opt-in and reports this failure.
 - No public deployment or paid resources were provisioned.

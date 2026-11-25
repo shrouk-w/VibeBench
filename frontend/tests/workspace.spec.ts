@@ -141,7 +141,7 @@ test("generates, interacts with, exports and removes two real apps", async ({
     await expect(
       page.getByRole("button", { name: "Start comparison" }),
     ).toBeVisible();
-    for (const url of urls) expect((await request.get(url)).status()).toBe(404);
+    for (const url of urls) expect((await page.goto(url))?.status()).toBe(404);
   } finally {
     const end = page.getByRole("button", { name: "End session" });
     if (await end.isVisible()) await end.click().catch(() => {});

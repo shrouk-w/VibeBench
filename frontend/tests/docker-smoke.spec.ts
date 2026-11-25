@@ -79,7 +79,7 @@ test("isolates two Docker sandboxes and proxies fixture applications", async ({
         container,
         "node",
         "-e",
-        'require("node:fs").writeFileSync("/workspace/server.cjs",Buffer.from(process.argv[1],"base64"))',
+        'const fs=require("node:fs"); fs.writeFileSync("/workspace/server.cjs",Buffer.from(process.argv[1],"base64")); fs.writeFileSync("/workspace/.env","KEY=fixture"); fs.symlinkSync("/workspace/.env","/workspace/secret-link");',
         application,
       ]);
       docker(["exec", "-d", container, "node", "/workspace/server.cjs"]);
@@ -156,6 +156,15 @@ test("isolates two Docker sandboxes and proxies fixture applications", async ({
       await page.getByRole("button", { name: "Favorite" }).click();
       await expect(page.getByText("Saved!", { exact: true })).toBeVisible();
     }
+    expect((await request.get(route + "/a/files")).status()).toBe(404);
+    const listing = await request.get(route + "/a/files", { headers: auth });
+    const names = await listing.json();
+    expect(names).toContain("server.cjs");
+    expect(names).not.toContain("secret-link");
+    const source = await request.get(route + "/a/file?path=server.cjs", {
+      headers: auth,
+    });
+    expect((await source.json()).content).toContain("createServer");
     const archive = await request.get(route + "/both/export", {
       headers: auth,
     });
@@ -164,6 +173,8 @@ test("isolates two Docker sandboxes and proxies fixture applications", async ({
     expect(zip.subarray(0, 2).toString()).toBe("PK");
     expect(zip.includes(Buffer.from("a/server.cjs"))).toBeTruthy();
     expect(zip.includes(Buffer.from("b/server.cjs"))).toBeTruthy();
+    expect(zip.includes(Buffer.from("secret-link"))).toBeFalsy();
+    expect(zip.includes(Buffer.from(".env"))).toBeFalsy();
   } finally {
     expect((await request.delete(route, { headers: auth })).status()).toBe(204);
   }
